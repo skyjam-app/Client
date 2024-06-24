@@ -67,8 +67,8 @@ function App(props: AppProps & { colorScheme: ColorScheme }) {
         />
 
         <meta name="twitter:card" content="summary_large_image" />
-        <meta property="twitter:domain" content="stemstr.app" />
-        <meta property="twitter:url" content="https://stemstr.app" />
+        <meta name="twitter:domain" content="stemstr.app" />
+        <meta name="twitter:url" content="https://stemstr.app" />
         <meta name="twitter:title" content="Stemstr" />
         <meta
           name="twitter:description"
@@ -76,7 +76,7 @@ function App(props: AppProps & { colorScheme: ColorScheme }) {
         />
         <meta
           name="twitter:image"
-          content="https://nostr.build/i/nostr.build_bfb0664574164159b287893e2f0b07c4585ff0a2b4725b4da7aa1683f7a8759d.png"
+          content="https://i.nostrimg.com/c7b9edc7c3e81206afbd6a97825da99021699ac1de510651fb53362df488955c/file.png"
         />
 
         <link rel="shortcut icon" href="/favicon.svg" />

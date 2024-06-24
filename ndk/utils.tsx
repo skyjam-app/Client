@@ -232,6 +232,10 @@ export const getNormalizedName = (pubkey: string, user?: NDKUser) => {
   );
 };
 
+export const getNormalizedUsername = (user?: NDKUser) => {
+  return user?.profile?.name ? `@${user.profile.name}` : "";
+};
+
 export const getFormattedName = (user?: NDKUser) => {
   if (user?.profile?.name) return `@${user.profile.name}`;
   return (
@@ -577,4 +581,8 @@ export const createSigner = async (
   }
 
   throw new Error("Invalid auth state");
+};
+
+export const isRootEvent = (event: NDKEvent): boolean => {
+  return !event.tags.find((tag) => tag[0] === "e");
 };

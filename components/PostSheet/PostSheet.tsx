@@ -1,4 +1,4 @@
-import { Box, Button, Center, Group, Stack, Text } from "@mantine/core";
+import { Box, Button, Center, Group, Loader, Stack, Text } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useDispatch, useSelector } from "react-redux";
 import { PostSheetState, closeSheet, openSheet } from "../../store/Sheets";
@@ -19,11 +19,12 @@ import { AddSoundIcon, TrashIcon } from "icons/StemstrIcon";
 import { hasNotch, isPwa } from "../../utils/common";
 import Drawer from "../Drawer/Drawer";
 
-type PostSheetFormValues = {
+export type PostSheetFormValues = {
   file: File | null;
   uploadResponse: {
     streamUrl: string | null;
     downloadUrl: string | null;
+    downloadHash: string | null;
     waveform: number[] | null;
   };
   comment: string;
@@ -48,6 +49,7 @@ export default function PostSheet() {
       uploadResponse: {
         streamUrl: null,
         downloadUrl: null,
+        downloadHash: null,
         waveform: null,
       },
       comment: "",
@@ -74,6 +76,7 @@ export default function PostSheet() {
     if (
       values.uploadResponse.streamUrl &&
       values.uploadResponse.downloadUrl &&
+      values.uploadResponse.downloadHash &&
       values.uploadResponse.waveform
     ) {
       kind = 1808;
@@ -87,6 +90,7 @@ export default function PostSheet() {
         values.uploadResponse.streamUrl,
         "application/vnd.apple.mpegurl",
       ]);
+      tags.push(["x", values.uploadResponse.downloadHash]);
       tags.push(["waveform", JSON.stringify(values.uploadResponse.waveform)]);
     }
 
@@ -257,6 +261,7 @@ export default function PostSheet() {
                           uploadResponse: {
                             streamUrl: null,
                             downloadUrl: null,
+                            downloadHash: null,
                             waveform: null,
                           },
                         });
@@ -289,6 +294,12 @@ export default function PostSheet() {
             {!replyingTo && <TagsFieldGroup {...form.getInputProps("tags")} />}
             {/* <ShareAcrossField {...form.getInputProps("shareAcross")} /> */}
             <Button disabled={isUploading || !hasContent} type="submit">
+              {isUploading && (
+                <>
+                  <Loader size="xs" />
+                  &nbsp;
+                </>
+              )}
               {replyingTo ? "Reply" : "Share"}
             </Button>
           </Stack>

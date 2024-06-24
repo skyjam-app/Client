@@ -1,6 +1,13 @@
-import { useRef, useEffect, memo, useState, useCallback } from "react";
+import {
+  useRef,
+  useEffect,
+  memo,
+  useState,
+  useCallback,
+  RefObject,
+} from "react";
 import { FeedNote } from "../Note/Note";
-import { VariableSizeList, areEqual } from "react-window";
+import { ListOnScrollProps, VariableSizeList, areEqual } from "react-window";
 import AutoSizer from "react-virtualized-auto-sizer";
 import InfiniteLoader from "react-window-infinite-loader";
 import { Box, Transition } from "@mantine/core";
@@ -13,13 +20,60 @@ import { noop } from "../../utils/common";
 import useFooterHeight from "../../ndk/hooks/useFooterHeight";
 import { NewEventsPill } from "./NewEventsPill";
 import { GhostFeed } from "./GhostFeed";
+import useStyles from "./Feed.styles";
 
 interface FeedProps {
   filter: NDKFilter;
   feedFilter?: (event: NDKEvent) => boolean;
   heightOffset?: number;
   onEventsLoaded?: (events: NDKEvent[]) => void;
+  aboveContentRef?: RefObject<HTMLElement>;
 }
+
+const FeedRow = memo(
+  ({
+    index,
+    data,
+    style,
+  }: {
+    index: number;
+    data: {
+      events: NDKEvent[];
+      setRowHeight: (index: number, height: number) => void;
+    };
+    style: Record<string, any>;
+  }) => {
+    const rowRef = useRef<HTMLDivElement>(null);
+    const event = data.events[index];
+
+    useEffect(() => {
+      if (rowRef.current) {
+        data.setRowHeight(index, rowRef.current.clientHeight);
+      }
+    }, [index]);
+
+    return (
+      <Box
+        m="auto"
+        pl="md"
+        pr="md"
+        sx={{
+          ...style,
+          right: 0,
+          maxWidth: 600,
+        }}
+      >
+        <div ref={rowRef}>
+          <EventProvider event={event}>
+            <FeedNote key={event.id} />
+          </EventProvider>
+        </div>
+      </Box>
+    );
+  },
+  areEqual
+);
+FeedRow.displayName = "FeedRow";
 
 export const Feed = memo(
   ({
@@ -27,8 +81,10 @@ export const Feed = memo(
     feedFilter = () => true,
     heightOffset = 0,
     onEventsLoaded = noop,
+    aboveContentRef,
   }: FeedProps) => {
     const { ndk, stemstrRelaySet } = useNDK();
+    const { classes } = useStyles();
     const [events, setEvents] = useState<NDKEvent[]>([]);
     const hasMoreEvents = useRef(true);
     const isLoadingMore = useRef(false);
@@ -43,45 +99,11 @@ export const Feed = memo(
       rowHeights.current = { ...rowHeights.current, [index]: height };
     };
 
-    const FeedRow = memo(
-      ({ index, style }: { index: number; style: Record<string, any> }) => {
-        const rowRef = useRef<HTMLDivElement>(null);
-        const event = events[index];
-
-        useEffect(() => {
-          if (rowRef.current) {
-            setRowHeight(index, rowRef.current.clientHeight);
-          }
-        }, [index]);
-
-        return (
-          <Box
-            m="auto"
-            pl="md"
-            pr="md"
-            sx={{
-              ...style,
-              right: 0,
-              maxWidth: 600,
-            }}
-          >
-            <div ref={rowRef}>
-              <EventProvider event={event}>
-                <FeedNote key={event.id} />
-              </EventProvider>
-            </div>
-          </Box>
-        );
-      },
-      areEqual
-    );
-
-    FeedRow.displayName = "FeedRow";
-
     // only preload the profiles for the first 50 events to reduce amount of data fetched and since relays don't return
     // any results when requesting too many profiles
     const hasAttemptedProfileCachePreload = usePreloadProfileCache(
-      events.slice(0, 50).map(({ pubkey }) => pubkey)
+      events.slice(0, 50).map(({ pubkey }) => pubkey),
+      JSON.stringify(filter)
     );
 
     const processEvents = useCallback(
@@ -133,10 +155,10 @@ export const Feed = memo(
         .catch(console.error);
 
       return () => {
-        hasMoreEvents.current = true;
         setEvents([]);
+        hasMoreEvents.current = true;
       };
-    }, [ndk, filter, stemstrRelaySet, processEvents]);
+    }, [ndk, filter, stemstrRelaySet]);
 
     const loadMoreItems = async () => {
       if (!ndk || !stemstrRelaySet || isLoadingMore.current) {
@@ -172,19 +194,22 @@ export const Feed = memo(
       listRef.current?.scrollToItem(0);
     };
 
+    const handleScroll = (props: ListOnScrollProps) => {
+      if (aboveContentRef?.current) {
+        aboveContentRef.current.style.marginTop = `-${Math.min(
+          props.scrollOffset,
+          aboveContentRef.current.clientHeight
+        )}px`;
+      }
+    };
+
     return (
       <>
         {!hasAttemptedProfileCachePreload && (
           <GhostFeed headerHeight={headerHeight} headerOffset={heightOffset} />
         )}
 
-        <AutoSizer
-          style={{
-            height: hasAttemptedProfileCachePreload
-              ? `calc(100vh - ${headerHeight}px - ${heightOffset}px`
-              : 0,
-          }}
-        >
+        <AutoSizer className={classes.feed}>
           {({ height, width }: { height: number; width: number }) => (
             <Box
               w="100vw"
@@ -218,11 +243,11 @@ export const Feed = memo(
                     >
                       {({ onItemsRendered, ref }) => (
                         <VariableSizeList
-                          height={
-                            height - headerHeight - heightOffset - footerHeight
-                          }
+                          onScroll={handleScroll}
+                          height={height}
                           itemKey={(index: number) => events[index].id}
                           itemCount={events.length}
+                          itemData={{ events, setRowHeight }}
                           itemSize={getRowHeight}
                           width={width}
                           overscanCount={5}

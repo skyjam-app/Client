@@ -1,33 +1,25 @@
-import { Stack } from "@mantine/core";
-import NotificationView from "components/NotificationView/NotificationView";
+import { Box, Stack } from "@mantine/core";
 import Head from "next/head";
 import FeedHeader from "../components/FeedHeader/FeedHeader";
 import useAuth from "hooks/useAuth";
-import { useNotifications } from "ndk/NostrNotificationsProvider";
-import { useEffect } from "react";
+import NotificationsFeed from "components/NotificationsFeed/NotificationsFeed";
+import useFooterHeight from "ndk/hooks/useFooterHeight";
 
 export default function Notifications() {
   const { guardAuth } = useAuth();
   guardAuth();
-
-  const { notifications, markAllAsRead } = useNotifications();
-
-  useEffect(() => {
-    markAllAsRead();
-  }, []);
+  const footerHeight = useFooterHeight();
 
   return (
     <>
       <Head>
         <title>Stemstr - Notifications</title>
       </Head>
-      <Stack spacing="md">
+      <Stack spacing={0} h={`calc(100vh - ${footerHeight}px)`}>
         <FeedHeader>Notifications</FeedHeader>
-        {Array.from(notifications.values())
-          .sort((a, b) => b.created_at - a.created_at)
-          .map((notification, index) => (
-            <NotificationView key={index} notification={notification} />
-          ))}
+        <Box sx={{ flexGrow: 1 }}>
+          <NotificationsFeed />
+        </Box>
       </Stack>
     </>
   );

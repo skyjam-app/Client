@@ -15,6 +15,22 @@ import { closeSheet } from "../../../store/Sheets";
 import { acceptedMimeTypes } from "../../../utils/media";
 import { Route } from "../../../enums";
 import useStyles from "components/Fields/SoundPicker/SoundPicker.styles";
+import { showNotification } from "@mantine/notifications";
+import { UseFormReturnType } from "@mantine/form";
+import { PostSheetFormValues } from "components/PostSheet/PostSheet";
+import { AppState } from "store/Store";
+
+export type SoundPickerProps = {
+  form: UseFormReturnType<
+    PostSheetFormValues,
+    (values: PostSheetFormValues) => PostSheetFormValues
+  >;
+  isDragging: boolean;
+  isUploading: boolean;
+  setIsUploading: (value: boolean) => void;
+  value: File | null;
+  onChange: (value: File | null) => void;
+};
 
 export default function SoundPicker({
   form,
@@ -22,21 +38,21 @@ export default function SoundPicker({
   isUploading,
   setIsUploading,
   ...rest
-}) {
+}: SoundPickerProps) {
   const router = useRouter();
   const dispatch = useDispatch();
-  const auth = useSelector((state) => state.auth);
+  const auth = useSelector((state: AppState) => state.auth);
   const [isPlaying, setIsPlaying] = useState(false);
   const [waveformData, setWaveformData] = useState(null);
-  const audioRef = useRef(null);
-  const audioTimeUpdateTimeoutRef = useRef();
-  const hlsRef = useRef(null);
-  const inputRef = useRef(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const audioTimeUpdateTimeoutRef = useRef<NodeJS.Timeout>();
+  const hlsRef = useRef<Hls | null>(null);
+  const inputRef = useRef<HTMLButtonElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [scrubTime, setScrubTime] = useState(null);
-  const [duration, setDuration] = useState(null);
+  const [duration, setDuration] = useState<number>();
   const { classes } = useStyles();
-  const [streamUrl, setStreamUrl] = useState(null);
+  const [streamUrl, setStreamUrl] = useState<string>();
   const [mediaAttached, setMediaAttached] = useState(false);
   const [soundPickerFocused, setSoundPickerFocused] = useState(false);
   const playButtonSpinVelocity = 1000;
@@ -45,78 +61,152 @@ export default function SoundPicker({
     return ((scrubTime - currentTime) / duration) * playButtonSpinVelocity;
   }, [scrubTime, currentTime, duration]);
 
+  const uploadFile = async () => {
+    if (!rest.value || !auth.pk) {
+      rest.onChange(null);
+      setIsUploading(false);
+      return;
+    }
+    const sum = await calculateHash(rest.value);
+    if (!sum) return;
+    const maxFileSizeMB = 100;
+    const maxFileSize = 1024 * 1024 * maxFileSizeMB;
+    if (rest.value.size > maxFileSize) {
+      alert(`File too big (Max ${maxFileSizeMB}MB)`);
+      rest.onChange(null);
+    } else {
+      const formData = new FormData();
+      formData.append("pk", auth.pk);
+      formData.append("sum", sum);
+      formData.append("filename", rest.value.name);
+      formData.append("file", rest.value);
+      setIsUploading(true);
+      setWaveformData(null);
+      axios
+        .post(`${process.env.NEXT_PUBLIC_STEMSTR_API}/upload`, formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        })
+        .then((response) => {
+          setStreamUrl(response.data.stream_url);
+          setWaveformData(response.data.waveform);
+          form.setFieldValue(
+            "uploadResponse.streamUrl",
+            response.data.stream_url
+          );
+          form.setFieldValue(
+            "uploadResponse.downloadUrl",
+            response.data.download_url
+          );
+          form.setFieldValue(
+            "uploadResponse.downloadHash",
+            response.data.download_hash
+          );
+          form.setFieldValue("uploadResponse.waveform", response.data.waveform);
+        })
+        .catch((error) => {
+          switch (error.response.status) {
+            case 400:
+              showNotification({
+                title: "Error 400",
+                message:
+                  "Problem uploading file. Please try again later, or try another file",
+                color: "red",
+                autoClose: 5000,
+              });
+              break;
+            case 401:
+              dispatch(closeSheet("postSheet"));
+              router.push(Route.Login);
+              break;
+            case 420:
+              showNotification({
+                title: "Error 420",
+                message: (
+                  <>
+                    The electric squirrel needs you to enhance your calm
+                    <br />
+                    🐿️🧘‍♂️☘️
+                  </>
+                ),
+                color: "red",
+                autoClose: 5000,
+              });
+              break;
+            case 500:
+              showNotification({
+                title: "Error 500",
+                message:
+                  "Problem uploading file. Please try again later, or try another file",
+                color: "red",
+                autoClose: 5000,
+              });
+              break;
+            default:
+              showNotification({
+                title: "Unknown Error",
+                message:
+                  "Problem uploading file. Please try again later, or try another file",
+                color: "red",
+                autoClose: 5000,
+              });
+              break;
+          }
+          rest.onChange(null);
+        })
+        .finally(() => {
+          setIsUploading(false);
+        });
+    }
+  };
+
   const handleAudioChange = async () => {
     form.setValues((prev) => ({
       ...prev,
       "uploadResponse.streamUrl": null,
       "uploadResponse.downloadUrl": null,
+      "uploadResponse.downloadHash": null,
       "uploadResponse.waveform": null,
     }));
     setIsPlaying(false);
-    if (rest.value) {
-      const sum = await calculateHash(rest.value);
-      const maxFileSizeMB = 100;
-      const maxFileSize = 1024 * 1024 * maxFileSizeMB;
-      if (rest.value.size > maxFileSize) {
-        alert(`File too big (Max ${maxFileSizeMB}MB)`);
-        rest.onChange(null);
-      } else {
-        const formData = new FormData();
-        formData.append("pk", auth.pk);
-        formData.append("sum", sum);
-        formData.append("filename", rest.value.name);
-        formData.append("file", rest.value);
-        setIsUploading(true);
-        setWaveformData(null);
-        axios
-          .post(`${process.env.NEXT_PUBLIC_STEMSTR_API}/upload`, formData, {
-            headers: {
-              "Content-Type": "multipart/form-data",
-            },
-          })
-          .then((response) => {
-            setStreamUrl(response.data.stream_url);
-            setWaveformData(response.data.waveform);
-            form.setFieldValue(
-              "uploadResponse.streamUrl",
-              response.data.stream_url
-            );
-            form.setFieldValue(
-              "uploadResponse.downloadUrl",
-              response.data.download_url
-            );
-            form.setFieldValue(
-              "uploadResponse.waveform",
-              response.data.waveform
-            );
-          })
-          .catch((error) => {
-            switch (error.response.status) {
-              case 400:
-                alert(error.response.data);
-                break;
-              case 401:
-                dispatch(closeSheet("postSheet"));
-                router.push(Route.Login);
-                break;
-              case 500:
-                alert("Server error. Please try again later.");
-                break;
-              default:
-                break;
-            }
-            rest.onChange(null);
-          })
-          .finally(() => {
-            setIsUploading(false);
+    if (rest.value && auth.pk) {
+      const audio = new Audio();
+      // Wait for the audio's metadata to load
+      audio.addEventListener("canplaythrough", async () => {
+        const maxUploadDuration =
+          Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_DURATION) || 300;
+        if (audio.duration > maxUploadDuration) {
+          rest.onChange(null);
+          showNotification({
+            title: "Stem Too Long",
+            message: `Maximum track length is ${formatSecondsToMinutesAndSeconds(
+              maxUploadDuration
+            )}`,
+            color: "red",
+            autoClose: 5000,
           });
-      }
+          return;
+        }
+        audio.src = ""; // Clear the src to release the resources
+        URL.revokeObjectURL(audio.src);
+        uploadFile();
+      });
+      audio.addEventListener("error", (e) => {
+        if (audio.error?.message.includes("DEMUXER_ERROR_COULD_NOT_OPEN")) {
+          audio.src = ""; // Clear the src to release the resources
+          URL.revokeObjectURL(audio.src);
+          uploadFile();
+        }
+      });
+      audio.src = URL.createObjectURL(rest.value);
+      audio.load();
     }
   };
 
   useEffect(() => {
     if (!rest.value) {
-      setStreamUrl(null);
+      setStreamUrl(undefined);
     }
     if (streamUrl) {
       if (Hls.isSupported()) {
@@ -126,7 +216,7 @@ export default function SoundPicker({
           // console.log("HLS manifest parsed");
         });
       } else if (
-        audioRef.current.canPlayType("application/vnd.apple.mpegurl")
+        audioRef.current?.canPlayType("application/vnd.apple.mpegurl")
       ) {
         audioRef.current.src = streamUrl;
       } else {
@@ -142,7 +232,7 @@ export default function SoundPicker({
   }, [streamUrl, rest.value, setStreamUrl, setMediaAttached]);
 
   const attachMedia = () => {
-    if (!mediaAttached && hlsRef.current) {
+    if (!mediaAttached && hlsRef.current && audioRef.current) {
       hlsRef.current.attachMedia(audioRef.current);
       setMediaAttached(true);
     }
@@ -174,11 +264,11 @@ export default function SoundPicker({
   };
 
   const handleSelectClick = () => {
-    inputRef.current.click();
+    inputRef.current?.click();
   };
 
   const handleCanPlay = () => {
-    setDuration(audioRef.current.duration);
+    setDuration(audioRef.current?.duration);
     trackAudioTime();
   };
 
@@ -233,7 +323,7 @@ export default function SoundPicker({
       </Box>
       <Box className={classes.pickerBackdrop}>
         <Group
-          spacing={(isUploading || !rest.value) && 0}
+          spacing={isUploading || !rest.value ? 0 : undefined}
           className={classes.picker}
           sx={(theme) => ({
             background: isDragging
@@ -250,7 +340,7 @@ export default function SoundPicker({
             <Center
               onClick={isPlaying ? handlePauseClick : handlePlayClick}
               sx={(theme) => ({
-                opacity: !!streamUrl,
+                opacity: streamUrl ? 1 : 0,
                 width: isUploading || !rest.value ? 0 : 36,
                 height: 36,
                 backgroundColor: theme.colors.purple[5],
@@ -292,8 +382,7 @@ export default function SoundPicker({
                   padding: `4px 8px`,
                   backgroundColor: theme.colors.purple[4],
                   borderRadius: theme.radius.xl,
-                  color: theme.white,
-                  cursor: !isUploading && "pointer",
+                  cursor: !isUploading ? "pointer" : undefined,
                   color: theme.colors.purple[5],
                   border: `1px solid ${theme.colors.purple[5]}`,
                   background: `linear-gradient(135deg, #F9F5FF 0%, #A17BF0 100%)`,
@@ -321,7 +410,7 @@ export default function SoundPicker({
   );
 }
 
-async function calculateHash(file) {
+async function calculateHash(file: File) {
   if (!file) return null;
   const hashBuffer = await crypto.subtle.digest(
     "SHA-256",
@@ -332,4 +421,22 @@ async function calculateHash(file) {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
   return hashHex;
+}
+
+function formatSecondsToMinutesAndSeconds(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  const minutesStr =
+    minutes > 0 ? `${minutes} minute${minutes !== 1 ? "s" : ""}` : "";
+  const secondsStr =
+    remainingSeconds > 0
+      ? `${remainingSeconds} second${remainingSeconds !== 1 ? "s" : ""}`
+      : "";
+
+  if (minutesStr && secondsStr) {
+    return `${minutesStr} and ${secondsStr}`;
+  } else {
+    return minutesStr || secondsStr || "0 seconds";
+  }
 }

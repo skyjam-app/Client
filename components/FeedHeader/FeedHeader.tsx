@@ -2,10 +2,14 @@ import { Group, Text } from "@mantine/core";
 import { PropsWithChildren } from "react";
 import { MaxWidthContainer } from "../Feed";
 import ProfileMenu from "components/ProfileMenu/ProfileMenu";
+import { useRouter } from "next/router";
+import SearchButton from "components/Search/SearchButton";
 
 export default function FeedHeader({ children }: PropsWithChildren) {
+  const router = useRouter();
+
   return (
-    <MaxWidthContainer>
+    <MaxWidthContainer sx={{ position: "sticky", top: 0, zIndex: 1 }}>
       <Group
         position="apart"
         noWrap
@@ -21,17 +25,22 @@ export default function FeedHeader({ children }: PropsWithChildren) {
         })}
       >
         <Text
+          onClick={() => router.reload()}
+          lh="normal"
+          truncate
           sx={(theme) => ({
             color: theme.white,
             fontWeight: 700,
             fontSize: 24,
+            cursor: "pointer",
           })}
-          lh="normal"
-          truncate
         >
           {children}
         </Text>
-        <ProfileMenu />
+        <Group>
+          <SearchButton />
+          <ProfileMenu />
+        </Group>
       </Group>
     </MaxWidthContainer>
   );
